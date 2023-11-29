@@ -1,0 +1,27 @@
+name: ape-drill-template
+
+plugins:
+  - name: foundry
+  - name: solidity # ape-solidity plugin
+  - name: tenderly-devnet
+    version: git+https://github.com/security-alliance/ape-tenderly-devnet.git@devnetSupport
+  - name: uniswap
+    version: git+https://github.com/security-alliance/ape-uniswap.git
+
+  
+
+tenderly-devnet:
+  host: https://mainnet.rpc.tenderly.co/FORK_URL
+  default_gas: 50000000000
+  tx_type: 0
+
+foundry:
+  host: http://127.0.0.1:8545
+  
+dependencies:
+  - name: Aave
+    local: ../foundry/lib/aave-v3
+    contracts_folder: contracts
+
+compile:
+  include_dependencies: true

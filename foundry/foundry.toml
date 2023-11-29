@@ -1,0 +1,15 @@
+[profile.default]
+src = 'src'
+script = 'script'
+out = 'out'
+libs = ['lib']
+libraries = ["src/strategies/GenLevCompV4.sol:FlashMintLib:0xcaa86f8df2ddca5c08fe81842900700f599a1b26"]
+
+
+[etherscan]
+mainnet = { key = "${ETHERSCAN_MAINNET_KEY}" }
+
+
+# libraries = ["<path>:<lib name>:<address>"]
+
+# See more config options https://github.com/foundry-rs/foundry/tree/master/config

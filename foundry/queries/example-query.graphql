@@ -1,0 +1,20 @@
+query ExampleQuery {
+    # this one is coming from uniswap-v2
+    pair(id: "0x00004ee988665cdda9a1080d5792cecd16dc1220") {
+        id
+        token0 {
+            id
+            symbol
+            name
+        }
+        token1 {
+            id
+            symbol
+            name
+        }
+    }
+    # this one is coming from aave-v3
+    positions(first: 5) {
+        id
+    }
+}

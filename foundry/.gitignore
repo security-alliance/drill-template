@@ -1,0 +1,16 @@
+# Compiler files
+cache/
+out/
+
+# Ignores development broadcast logs
+/broadcast
+
+# Dotenv file
+.env
+.env.yearn
+
+node_modules/
+
+.graphclient
+
+artifacts

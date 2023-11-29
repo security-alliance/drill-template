@@ -1,0 +1,15 @@
+[submodule "foundry/lib/aave-address-book"]
+	path = foundry/lib/aave-address-book
+	url = https://github.com/bgd-labs/aave-address-book
+[submodule "foundry/lib/safe-contracts"]
+	path = foundry/lib/safe-contracts
+	url = https://github.com/safe-global/safe-contracts
+[submodule "foundry/lib/aave-stake-v2"]
+	path = foundry/lib/aave-stake-v2
+	url = https://github.com/aave/aave-stake-v2
+[submodule "foundry/lib/gho-core"]
+	path = foundry/lib/gho-core
+	url = https://github.com/aave/gho-core
+[submodule "foundry/lib/aave-v3-periphery"]
+	path = foundry/lib/aave-v3-periphery
+	url = https://github.com/aave/aave-v3-periphery
