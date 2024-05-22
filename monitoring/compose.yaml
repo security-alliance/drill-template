@@ -1,0 +1,46 @@
+services:
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - 9090:9090
+    restart: unless-stopped
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prom_data:/prometheus
+      - ./prometheus/alerting_rules.yml:/etc/prometheus/alerting_rules.yml
+  # alertmanager server
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: always
+    ports:
+      - 9093:9093
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=grafana
+    volumes:
+      - ./grafana:/etc/grafana/provisioning/datasources
+  mon:
+    build:
+      context: ../
+      target: mon
+      dockerfile: services/docker/Dockerfile.packages
+    # platform: linux/amd64
+    restart: always
+    container_name: 'balance-mon'
+    ports:
+      - 7300:7300
+    env_file:
+      - ../services/.env
+volumes:
+  prom_data:

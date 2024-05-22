@@ -1,0 +1,14 @@
+services:
+  seal-bot-dev:
+    build:
+      context: ../
+      target: bot
+      dockerfile: services/docker/Dockerfile.packages
+    restart: always
+    command: ["dev:bot"]
+    container_name: 'bot-dev'
+    ports:
+      - 7403:7403
+    env_file:
+      - ../services/.env
+

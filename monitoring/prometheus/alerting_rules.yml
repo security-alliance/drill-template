@@ -1,0 +1,19 @@
+# alert rules (to be used by AlertManager)
+groups:
+  - name: alerting_rules
+    # rules evaluation period
+    interval: 1s
+    rules:
+      # balance monitor metrics simple rule
+      - alert: balanceMonHasBalance
+        # balance monitor has balance
+        expr: balance_mon_balances > 0
+        # during 10 seconds
+        for: 10s
+        labels:
+          # sounds important
+          severity: critical
+        annotations:
+          summary: "Balance monitor has balance"
+          description: "Balance monitor has balance"
+

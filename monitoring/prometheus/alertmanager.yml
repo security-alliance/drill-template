@@ -1,0 +1,24 @@
+global:
+  resolve_timeout: 1m
+  opsgenie_api_key: ${OPSGENIE_API_KEY}
+
+route:
+  group_by: ['instance', 'severity']
+  # wait to send notification
+  group_wait: 1s
+  # wait to resend notification
+  repeat_interval: 1h
+  routes:
+  - match:
+      # demo alert
+      alertname: balance-mon-has-balance-seal
+  receiver: 'ops-genie-alerts'
+
+receivers:
+# configuration for OpsGenie
+- name: 'ops-genie-alerts'
+  opsgenie_configs:
+  - api_url: "https://api.opsgenie.com/"
+    message: "{{ .CommonAnnotations.summary }}"
+    description: "{{ .CommonAnnotations.runbook_url }}"
+    priority: "{{ .CommonLabels.severity }}"

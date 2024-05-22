@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+# connect to AlertManager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+
+# include alert rules (to be used by AlertManager)
+rule_files:
+  - '/etc/prometheus/alerting_rules.yaml'
+scrape_configs:
+  - job_name: prometheus
+    honor_timestamps: true
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - localhost:9090
+  - job_name: chain-mon
+    honor_timestamps: true
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - mon:7300
