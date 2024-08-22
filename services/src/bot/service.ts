@@ -15,7 +15,7 @@ import { version } from '../../package.json'
 import { Erc20TokenAbi } from './ERC20TokenAbi'
 
 type Options = {
-  l1RpcProvider: Provider
+  rpcProvider: Provider
   mnemonic: string
   faucetKey: string
   sleepTimeMs: number
@@ -29,14 +29,14 @@ type Metrics = {
   nodeConnectionFailures: Gauge
   faucetL1Balance: Gauge
   faucetErc20Balance: Gauge
-  l1Balances: Gauge
-  l1Erc20Balances: Gauge
+  nativeBalances: Gauge
+  erc20Balances: Gauge
 }
 
 type Bot = {
-  l1Signer: Signer
-  l1EthBalance: BigNumber
-  l1Erc20Balance: BigNumber
+  signer: Signer
+  nativeBalance: BigNumber
+  erc20Balance: BigNumber
   address: string
   nickname: string
 }
@@ -61,7 +61,7 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
         ...options,
       },
       optionsSpec: {
-        l1RpcProvider: {
+        rpcProvider: {
           validator: validators.provider,
           desc: 'Provider for interacting with L1',
         },
@@ -114,12 +114,12 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
           type: Gauge,
           desc: 'Faucet ERC20 balance',
         },
-        l1Balances: {
+        nativeBalances: {
           type: Gauge,
           desc: 'Balances of addresses',
           labels: ['address', 'nickname'],
         },
-        l1Erc20Balances: {
+        erc20Balances: {
           type: Gauge,
           desc: 'Balances of addresses',
           labels: ['address', 'nickname'],
@@ -136,13 +136,13 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
 
   async init(): Promise<void> {
     // Connect to L1.
-    await waitForProvider(this.options.l1RpcProvider, {
+    await waitForProvider(this.options.rpcProvider, {
       logger: this.logger,
       name: 'L1',
     })
 
     this.state.faucetSigner = new Wallet(this.options.faucetKey).connect(
-      this.options.l1RpcProvider
+      this.options.rpcProvider
     )
 
     const faucetAddress = await this.state.faucetSigner.getAddress()
@@ -151,7 +151,7 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
     this.state.erc20Token = new ethers.Contract(
       l1Erc20Address,
       Erc20TokenAbi,
-      this.options.l1RpcProvider
+      this.options.rpcProvider
     )
 
     this.state.bots = []
@@ -160,12 +160,12 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       const l1Signer = Wallet.fromMnemonic(
         this.options.mnemonic,
         `m/44'/60'/0'/0/${i}`
-      ).connect(this.options.l1RpcProvider)
+      ).connect(this.options.rpcProvider)
       this.state.bots.push({
-        l1Signer,
+        signer: l1Signer,
         address: l1Signer.address,
-        l1EthBalance: BigNumber.from(0),
-        l1Erc20Balance: BigNumber.from(0),
+        nativeBalance: BigNumber.from(0),
+        erc20Balance: BigNumber.from(0),
         nickname: `L1-${i}`,
       })
       console.log(`Added L1 signer ${l1Signer.address}`)
@@ -189,9 +189,9 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       this.options.faucetErc20TxAmount
     )
 
-    if (bot.l1EthBalance.lt(minimumBotBalance)) {
+    if (bot.nativeBalance.lt(minimumBotBalance)) {
       console.log(
-        `L1 signer ${bot.address} balance: ${bot.l1EthBalance} < ${minimumBotBalance}`
+        `L1 signer ${bot.address} balance: ${bot.nativeBalance} < ${minimumBotBalance}`
       )
       const faucetEthTx = await this.state.faucetSigner.sendTransaction({
         to: bot.address,
@@ -200,9 +200,9 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       await faucetEthTx.wait()
     }
 
-    if (bot.l1Erc20Balance < faucetERC20TxAmount) {
+    if (bot.erc20Balance < faucetERC20TxAmount) {
       console.log(
-        `L1 signer ${bot.address} ERC20 balance: ${bot.l1Erc20Balance} < ${faucetERC20TxAmount}`
+        `L1 signer ${bot.address} ERC20 balance: ${bot.erc20Balance} < ${faucetERC20TxAmount}`
       )
       const faucetERC20Tx = await this.state.faucetSigner.sendTransaction(
         await this.state.erc20Token.populateTransaction.transfer(
@@ -215,20 +215,20 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
   }
 
   private async trackBotBalances(bot: Bot): Promise<void> {
-    const l1Balance = await bot.l1Signer.getBalance()
-    this.metrics.l1Balances.set(
+    const l1Balance = await bot.signer.getBalance()
+    this.metrics.nativeBalances.set(
       { address: bot.address, nickname: bot.nickname },
       parseInt(l1Balance.toString(), 10)
     )
 
     const erc20L1Balance = await this.state.erc20Token.balanceOf(bot.address)
-    this.metrics.l1Erc20Balances.set(
+    this.metrics.erc20Balances.set(
       { address: bot.address, nickname: bot.nickname },
       parseInt(erc20L1Balance.toString(), 10)
     )
 
-    bot.l1EthBalance = l1Balance
-    bot.l1Erc20Balance = erc20L1Balance
+    bot.nativeBalance = l1Balance
+    bot.erc20Balance = erc20L1Balance
   }
 
   private async trackFaucetBalances(): Promise<void> {
@@ -246,14 +246,14 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
   }
 
   private async runErc20Transfers(bot: Bot): Promise<void> {
-    const transferAmount = bot.l1Erc20Balance.div(3)
+    const transferAmount = bot.erc20Balance.div(3)
     const otherBot = this.getRandomOtherBot(bot)
     console.log(
       `Transferring ${utils.formatEther(transferAmount)} ERC20 from ${
         bot.address
       } to ${otherBot.address}`
     )
-    const transferTx = await bot.l1Signer.sendTransaction(
+    const transferTx = await bot.signer.sendTransaction(
       await this.state.erc20Token.populateTransaction.transfer(
         otherBot.address,
         transferAmount
@@ -278,13 +278,13 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       console.log('Bot: ', bot.nickname)
       console.log('----------------------------------------------------')
       console.log('Address:    ', bot.address)
-      console.log('L1 ERC20 Balance:', utils.formatEther(bot.l1Erc20Balance))
-      console.log('L1 ETH Balance:', utils.formatEther(bot.l1EthBalance))
+      console.log('L1 ERC20 Balance:', utils.formatEther(bot.erc20Balance))
+      console.log('L1 ETH Balance:', utils.formatEther(bot.nativeBalance))
       await this.ensureMinimumBalances(bot)
 
       if (
-        bot.l1EthBalance.gt(minimumBotBalance) &&
-        bot.l1Erc20Balance.gt(minimumBotBalance)
+        bot.nativeBalance.gt(minimumBotBalance) &&
+        bot.erc20Balance.gt(minimumBotBalance)
       ) {
         await this.runErc20Transfers(bot)
       }
