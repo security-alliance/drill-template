@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.25;
 
+import {console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -110,6 +111,7 @@ contract Lockup is
     function claim(uint256[] calldata _ids) external whenNotPaused {
         for (uint256 i; i < _ids.length; ++i) {
             LockupInfo memory l = lockups[_ids[i]];
+            
 
             if (i != 0)
                 require(_ids[i - 1] < _ids[i], "input ids are not increasing");

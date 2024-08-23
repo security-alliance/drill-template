@@ -45,8 +45,6 @@ contract LockupTest is Test {
         bob = makeAddr("bob");
         owner = lockup.owner();
         
-        console.log("owner: %s", owner);
-
         token.transfer(alice, 50 ether);
         vm.startPrank(alice);
         token.approve(address(lockup), type(uint256).max);
