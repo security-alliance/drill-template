@@ -7,12 +7,13 @@ import {
   waitForProvider,
 } from '@eth-optimism/common-ts'
 import { sleep } from '@eth-optimism/core-utils'
-import { Provider } from '@ethersproject/abstract-provider'
+import { Provider, Log } from '@ethersproject/abstract-provider'
 import { BigNumber, Signer, Wallet, ethers, utils } from 'ethers'
 
 import { version } from '../../package.json'
 
-import { Erc20TokenAbi } from './ERC20TokenAbi'
+import { MockTokenAbi } from './MockTokenAbi'
+import { LockupAbi } from './LockupAbi'
 
 type Options = {
   rpcProvider: Provider
@@ -20,41 +21,59 @@ type Options = {
   faucetKey: string
   sleepTimeMs: number
   numBots: number
+  lockupIndexingStartBlock: number
   minimumBotBalance: string
   faucetEthTxAmount: string
   faucetErc20TxAmount: string
+  mockTokenAddress: string
+  callbackTokenAddress: string
+  lockupProxyAddress: string
+  lockupPeriodSeconds: number
 }
 
 type Metrics = {
   nodeConnectionFailures: Gauge
-  faucetL1Balance: Gauge
-  faucetErc20Balance: Gauge
+  faucetNativeBalance: Gauge
   nativeBalances: Gauge
-  erc20Balances: Gauge
+  mockTokenBalances: Gauge
+  callbackTokenBalances: Gauge
+}
+
+type Lockup = {
+  id: number
+  token: string
+  recipient: string
+  startTime: number
+  amount: BigNumber
 }
 
 type Bot = {
   signer: Signer
   nativeBalance: BigNumber
-  erc20Balance: BigNumber
+  mockTokenBalance: BigNumber
+  callbackTokenBalance: BigNumber
   address: string
   nickname: string
+  lockups: Map<number, Lockup>
+  pendingLockupIds: Set<number>
+  availableLockupIds: Set<number>
 }
 
 type State = {
   bots: Bot[]
   faucetSigner: Signer
-  erc20Token: ethers.Contract
+  mockToken: ethers.Contract
+  callbackToken: ethers.Contract
+  lockupProxy: ethers.Contract
 }
 
-const l1Erc20Address = '0x608ddcdf387c1638993dc0f45dfd2746b08b9b4a'
-
+const MAX_UINT256 = BigNumber.from(2).pow(256).sub(1)
 
 export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
   constructor(options?: Partial<Options & StandardOptions>) {
     super({
       version,
-      name: 'ERC20-bot',
+      name: 'bot',
       loop: true,
       options: {
         loopIntervalMs: 1000,
@@ -63,7 +82,7 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       optionsSpec: {
         rpcProvider: {
           validator: validators.provider,
-          desc: 'Provider for interacting with L1',
+          desc: 'Provider for interacting with the network',
         },
         mnemonic: {
           validator: validators.str,
@@ -72,6 +91,28 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
         faucetKey: {
           validator: validators.str,
           desc: 'Private key for the faucet account that will be used to send transactions',
+        },
+        mockTokenAddress: {
+          validator: validators.address,
+          desc: 'Address of the mock token',
+        },
+        callbackTokenAddress: {
+          validator: validators.address,
+          desc: 'Address of the callback token',
+        },
+        lockupProxyAddress: {
+          validator: validators.address,
+          desc: 'Address of the lockup proxy',
+        },
+        lockupPeriodSeconds: {
+          validator: validators.num,
+          default: 500,
+          desc: 'Lockup period in seconds',
+        },
+        lockupIndexingStartBlock: {
+          validator: validators.num,
+          default: 0,
+          desc: 'Block number to start indexing lockups from',
         },
         numBots: {
           validator: validators.num,
@@ -106,20 +147,21 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
           desc: 'Number of times node connection has failed',
           labels: ['layer', 'section'],
         },
-        faucetL1Balance: {
+        faucetNativeBalance: {
           type: Gauge,
           desc: 'Faucet L1 balance',
-        },
-        faucetErc20Balance: {
-          type: Gauge,
-          desc: 'Faucet ERC20 balance',
         },
         nativeBalances: {
           type: Gauge,
           desc: 'Balances of addresses',
           labels: ['address', 'nickname'],
         },
-        erc20Balances: {
+        mockTokenBalances: {
+          type: Gauge,
+          desc: 'Balances of addresses',
+          labels: ['address', 'nickname'],
+        },
+        callbackTokenBalances: {
           type: Gauge,
           desc: 'Balances of addresses',
           labels: ['address', 'nickname'],
@@ -148,9 +190,21 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
     const faucetAddress = await this.state.faucetSigner.getAddress()
     console.log(`Initialized faucet signer ${faucetAddress}`)
 
-    this.state.erc20Token = new ethers.Contract(
-      l1Erc20Address,
-      Erc20TokenAbi,
+    this.state.mockToken = new ethers.Contract(
+      this.options.mockTokenAddress,
+      MockTokenAbi,
+      this.options.rpcProvider
+    )
+
+    this.state.callbackToken = new ethers.Contract(
+      this.options.callbackTokenAddress,
+      MockTokenAbi,
+      this.options.rpcProvider
+    )
+
+    this.state.lockupProxy = new ethers.Contract(
+      this.options.lockupProxyAddress,
+      LockupAbi,
       this.options.rpcProvider
     )
 
@@ -165,11 +219,16 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
         signer: l1Signer,
         address: l1Signer.address,
         nativeBalance: BigNumber.from(0),
-        erc20Balance: BigNumber.from(0),
+        mockTokenBalance: BigNumber.from(0),
+        callbackTokenBalance: BigNumber.from(0),
         nickname: `L1-${i}`,
+        lockups: new Map<number, Lockup>(),
+        pendingLockupIds: new Set<number>(),
+        availableLockupIds: new Set<number>(),
       })
       console.log(`Added L1 signer ${l1Signer.address}`)
     })
+    await this.indexPreviousLockups()
   }
 
   // K8s healthcheck
@@ -179,6 +238,52 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
         ok: true,
       })
     })
+  }
+  
+  private async indexPreviousLockups(): Promise<void> {
+    const INDEXING_START_BLOCK = this.options.lockupIndexingStartBlock
+    console.log(`Indexing previous lockups starting from block ${INDEXING_START_BLOCK}...`);
+    const latestBlock = await this.options.rpcProvider.getBlock('latest');
+    const filter = this.state.lockupProxy.filters.NewLockup();
+    const events = await this.state.lockupProxy.queryFilter(filter, INDEXING_START_BLOCK, latestBlock.number);
+
+    for (const event of events) {
+      const lockupInfo = event.args.l;
+      const newLockup: Lockup = {
+        id: lockupInfo.id.toNumber(),
+        token: lockupInfo.token,
+        recipient: lockupInfo.recipient,
+        startTime: lockupInfo.startTime.toNumber(),
+        amount: lockupInfo.amount,
+      };
+      console.log(`New lockup created for ${newLockup.recipient}: ID ${newLockup.id} with startTime ${newLockup.startTime}`);
+
+      const recipientBot = this.state.bots.find(bot => bot.address.toLowerCase() === newLockup.recipient.toLowerCase());
+      if (recipientBot) {
+        recipientBot.lockups.set(newLockup.id, newLockup);
+        recipientBot.pendingLockupIds.add(newLockup.id);
+        console.log(`Indexed lockup ${newLockup.id} for ${recipientBot.address}`);
+      }
+    }
+
+    // Now check for claimed lockups
+    const claimFilter = this.state.lockupProxy.filters.LockupClaimed();
+    const claimEvents = await this.state.lockupProxy.queryFilter(claimFilter, INDEXING_START_BLOCK, latestBlock.number);
+
+    for (const event of claimEvents) {
+      const claimedLockupInfo = event.args.l;
+      const claimedId = claimedLockupInfo.id.toNumber();
+
+      for (const bot of this.state.bots) {
+        if (bot.lockups.has(claimedId)) {
+          bot.lockups.delete(claimedId);
+          bot.pendingLockupIds.delete(claimedId);
+          console.log(`Removed claimed lockup ${claimedId} for ${bot.address}`);
+        }
+      }
+    }
+
+    console.log('Finished indexing previous lockups');
   }
 
   private async ensureMinimumBalances(bot: Bot): Promise<void> {
@@ -200,12 +305,25 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       await faucetEthTx.wait()
     }
 
-    if (bot.erc20Balance < faucetERC20TxAmount) {
+    if (bot.mockTokenBalance.lt(faucetERC20TxAmount)) {
       console.log(
-        `L1 signer ${bot.address} ERC20 balance: ${bot.erc20Balance} < ${faucetERC20TxAmount}`
+        `L1 signer ${bot.address} ERC20 balance: ${bot.mockTokenBalance} < ${faucetERC20TxAmount}`
       )
       const faucetERC20Tx = await this.state.faucetSigner.sendTransaction(
-        await this.state.erc20Token.populateTransaction.transfer(
+        await this.state.mockToken.populateTransaction.mint(
+          bot.address,
+          faucetERC20TxAmount
+        )
+      )
+      await faucetERC20Tx.wait()
+    }
+
+    if (bot.callbackTokenBalance.lt(faucetERC20TxAmount)) {
+      console.log(
+        `L1 signer ${bot.address} ERC20 balance: ${bot.callbackTokenBalance} < ${faucetERC20TxAmount}`
+      )
+      const faucetERC20Tx = await this.state.faucetSigner.sendTransaction(
+        await this.state.callbackToken.populateTransaction.mint(
           bot.address,
           faucetERC20TxAmount
         )
@@ -215,38 +333,101 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
   }
 
   private async trackBotBalances(bot: Bot): Promise<void> {
-    const l1Balance = await bot.signer.getBalance()
+    const nativeBalance = await bot.signer.getBalance()
     this.metrics.nativeBalances.set(
       { address: bot.address, nickname: bot.nickname },
-      parseInt(l1Balance.toString(), 10)
+      parseInt(nativeBalance.toString(), 10)
     )
 
-    const erc20L1Balance = await this.state.erc20Token.balanceOf(bot.address)
-    this.metrics.erc20Balances.set(
+    const mockTokenBalance = await this.state.mockToken.balanceOf(bot.address)
+    this.metrics.mockTokenBalances.set(
       { address: bot.address, nickname: bot.nickname },
-      parseInt(erc20L1Balance.toString(), 10)
+      parseInt(mockTokenBalance.toString(), 10)
     )
 
-    bot.nativeBalance = l1Balance
-    bot.erc20Balance = erc20L1Balance
+    const callbackTokenBalance = await this.state.callbackToken.balanceOf(
+      bot.address
+    )
+    this.metrics.callbackTokenBalances.set(
+      { address: bot.address, nickname: bot.nickname },
+      parseInt(callbackTokenBalance.toString(), 10)
+    )
+
+    bot.nativeBalance = nativeBalance
+    bot.mockTokenBalance = mockTokenBalance
+    bot.callbackTokenBalance = callbackTokenBalance
+  }
+
+  private async trackLockupState(bot: Bot): Promise<void> {
+    const lockupIds = Array.from(bot.pendingLockupIds);
+    console.log(`Tracking ${lockupIds.length} lockups for ${bot.address}`);
+    const latestBlock = await this.options.rpcProvider.getBlock('latest');
+    const latestBlockTimestamp = latestBlock.timestamp;
+  
+    console.log(`Latest block timestamp: ${latestBlockTimestamp}`);
+  
+    for (const id of lockupIds) {
+      try {
+        const lockup = await this.state.lockupProxy.lockups(id);
+        const startTime = lockup.startTime.toNumber();
+        const lockupEndTime = startTime + this.options.lockupPeriodSeconds;
+        
+        if (latestBlockTimestamp >= lockupEndTime) {
+          console.log(`Lockup ${id} is available (Current time: ${latestBlockTimestamp}, Lockup end: ${lockupEndTime})`);
+          bot.availableLockupIds.add(id);
+          bot.pendingLockupIds.delete(id);
+        } else {
+          console.log(`Lockup ${id} is not yet available (Current time: ${latestBlockTimestamp}, Lockup end: ${lockupEndTime})`);
+          console.log(`Wait for ${lockupEndTime - latestBlockTimestamp} seconds...`);
+        }
+      } catch (error) {
+        console.error(`Error fetching lockup ${id}:`, error);
+      }
+    }
+  
+    console.log(`Available lockups for ${bot.address}: ${Array.from(bot.availableLockupIds).join(', ')}`);
+    console.log(`Pending lockups for ${bot.address}: ${Array.from(bot.pendingLockupIds).join(', ')}`);
   }
 
   private async trackFaucetBalances(): Promise<void> {
-    const faucetL1Balance = await this.state.faucetSigner.getBalance()
-    console.log(`Faucet L1 balance: ${faucetL1Balance}`)
-    const faucetAddress = await this.state.faucetSigner.getAddress()
-    const faucetERC20Balance = await this.state.erc20Token.balanceOf(
-      faucetAddress
+    const faucetNativeBalance = await this.state.faucetSigner.getBalance()
+    console.log(`Faucet L1 balance: ${faucetNativeBalance}`)
+    this.metrics.faucetNativeBalance.set(
+      parseInt(faucetNativeBalance.toString(), 10)
     )
-    this.metrics.faucetL1Balance.set(parseInt(faucetL1Balance.toString(), 10))
-    this.metrics.faucetErc20Balance.set(
-      parseInt(faucetERC20Balance.toString(), 10)
+  }
+
+  private async approveMaxLockup(
+    bot: Bot,
+    tokenAddress: string
+  ): Promise<void> {
+    console.log(
+      `Approving max ${tokenAddress} from ${bot.address} to ${this.state.lockupProxy.address}`
     )
-    console.log(`Faucet ERC20 balance: ${faucetERC20Balance}`)
+    const approveTx = await bot.signer.sendTransaction(
+      await this.state.mockToken.populateTransaction.approve(
+        this.state.lockupProxy.address,
+        MAX_UINT256
+      )
+    )
+    await approveTx.wait()
+  }
+
+  private async runApprovals(bot: Bot, tokenAddress: string): Promise<void> {
+    const approval = await this.state.mockToken.allowance(
+      bot.address,
+      this.state.lockupProxy.address
+    )
+    if (approval.lt(MAX_UINT256)) {
+      console.log(
+        `Approving max ${tokenAddress} from ${bot.address} to ${this.state.lockupProxy.address}`
+      )
+      await this.approveMaxLockup(bot, tokenAddress)
+    }
   }
 
   private async runErc20Transfers(bot: Bot): Promise<void> {
-    const transferAmount = bot.erc20Balance.div(3)
+    const transferAmount = bot.mockTokenBalance.div(3)
     const otherBot = this.getRandomOtherBot(bot)
     console.log(
       `Transferring ${utils.formatEther(transferAmount)} ERC20 from ${
@@ -254,7 +435,7 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
       } to ${otherBot.address}`
     )
     const transferTx = await bot.signer.sendTransaction(
-      await this.state.erc20Token.populateTransaction.transfer(
+      await this.state.mockToken.populateTransaction.transfer(
         otherBot.address,
         transferAmount
       )
@@ -267,6 +448,77 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
     )
   }
 
+  private async runLockup(bot: Bot): Promise<void> {
+    const otherBot = this.getRandomOtherBot(bot)
+    const numPendingLockups = otherBot.pendingLockupIds.size
+    if (numPendingLockups > 2) {
+      console.log(
+        `Bot ${otherBot.address} already has ${numPendingLockups} pending lockups`
+      )
+      return
+    }
+    console.log(`Running lockup from ${bot.address} to ${otherBot.address}`)
+    const lockupAmount = bot.mockTokenBalance.div(3)
+    const lockupTx = await bot.signer.sendTransaction(
+      await this.state.lockupProxy.populateTransaction.lockup(
+        this.state.mockToken.address,
+        otherBot.address,
+        lockupAmount
+      )
+    )
+    const receipt = await lockupTx.wait()
+
+    // Find the NewLockup event in the transaction logs
+    const newLockupLog = receipt.logs.find((log: Log) => {
+      try {
+        const parsedLog = this.state.lockupProxy.interface.parseLog(log)
+        return parsedLog.name === 'NewLockup'
+      } catch {
+        return false
+      }
+    })
+
+    if (newLockupLog) {
+      const parsedLog = this.state.lockupProxy.interface.parseLog(newLockupLog)
+      const lockupInfo = parsedLog.args.l
+      const newLockup: Lockup = {
+        id: lockupInfo.id.toNumber(),
+        token: lockupInfo.token,
+        recipient: lockupInfo.recipient,
+        startTime: lockupInfo.startTime.toNumber(),
+        amount: lockupInfo.amount,
+      }
+
+      // Add the new lockup to otherBot's pending lockups
+      otherBot.lockups.set(newLockup.id, newLockup)
+      otherBot.pendingLockupIds.add(newLockup.id)
+
+      console.log(
+        `New lockup created for ${otherBot.address}: ID ${newLockup.id}`
+      )
+    } else {
+      console.log('Failed to find NewLockup event in transaction receipt')
+    }
+  }
+  
+  private async redeemLockups(bot: Bot): Promise<void> {
+    const lockupIds = bot.availableLockupIds
+    if (lockupIds.size === 0) {
+      console.log(`No lockups to redeem for ${bot.address}`)
+      return
+    }
+    console.log(`Redeeming ${lockupIds.size} lockups for ${bot.address}`)
+    const redeemTx = await bot.signer.sendTransaction(
+      await this.state.lockupProxy.populateTransaction.claim(Array.from(lockupIds))
+    )
+    await redeemTx.wait()
+    // Delete the lockup from the bot's pending lockups
+    for (const id of lockupIds) {
+      bot.lockups.delete(id)
+      bot.availableLockupIds.delete(id)
+    }
+  }
+
   async main(): Promise<void> {
     // Parse options
     const minimumBotBalance = utils.parseEther(this.options.minimumBotBalance)
@@ -275,18 +527,31 @@ export class ERC20Bot extends BaseServiceV2<Options, Metrics, State> {
 
     for (const bot of this.state.bots) {
       await this.trackBotBalances(bot)
+      await this.trackLockupState(bot)
       console.log('Bot: ', bot.nickname)
       console.log('----------------------------------------------------')
       console.log('Address:    ', bot.address)
-      console.log('L1 ERC20 Balance:', utils.formatEther(bot.erc20Balance))
-      console.log('L1 ETH Balance:', utils.formatEther(bot.nativeBalance))
+      console.log('ETH Balance:', utils.formatEther(bot.nativeBalance))
+      console.log(
+        'Mock Token Balance:',
+        utils.formatEther(bot.mockTokenBalance)
+      )
+      console.log(
+        'Callback Token Balance:',
+        utils.formatEther(bot.callbackTokenBalance)
+      )
       await this.ensureMinimumBalances(bot)
+
+      await this.runApprovals(bot, this.state.mockToken.address)
+      await this.runApprovals(bot, this.state.callbackToken.address)
 
       if (
         bot.nativeBalance.gt(minimumBotBalance) &&
-        bot.erc20Balance.gt(minimumBotBalance)
+        bot.mockTokenBalance.gt(minimumBotBalance)
       ) {
         await this.runErc20Transfers(bot)
+        await this.runLockup(bot)
+        await this.redeemLockups(bot)
       }
       console.log('----------------------------------------------------')
       console.log('----------------------------------------------------')

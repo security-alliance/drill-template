@@ -3,22 +3,16 @@ pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
 import {Lockup} from "../src/Lockup.sol";
+import {LockupV2} from "../src/LockupV2.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {MockToken} from "../src/fixtures/MockToken.sol";
 
-contract Token is ERC20 {
-    constructor(
-        string memory name_,
-        string memory symbol_
-    ) ERC20(name_, symbol_) {
-        _mint(msg.sender, 100 ether);
-    }
-}
 
 contract LockupTest is Test {
     Lockup lockup;
-    IERC20 token;
+    MockToken token;
 
     address alice;
     address bob;
@@ -39,13 +33,13 @@ contract LockupTest is Test {
 
         // Set the lockup variable to the proxy address, but cast it to the Lockup interface
         lockup = Lockup(address(proxy));
-        token = new Token("Token", "Token");
+        token = new MockToken("Token", "Token", address(this));
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         owner = lockup.owner();
         
-        token.transfer(alice, 50 ether);
+        token.mint(alice, 50 ether);
         vm.startPrank(alice);
         token.approve(address(lockup), type(uint256).max);
         vm.stopPrank();
@@ -109,6 +103,23 @@ contract LockupTest is Test {
 
         uint256[] memory ids = new uint256[](5);
         for (uint256 i; i < ids.length; ++i) ids[i] = i + 1;
+        lockup.claim(ids);
+    }
+    
+    function test_upgrade_succeeds() public {
+        vm.startPrank(owner);
+        lockup.upgradeToAndCall(address(new LockupV2()), "");
+        vm.stopPrank();
+        
+        
+        // Ensure contract still works post upgrade
+        vm.startPrank(alice);
+        uint256 id = lockup.lockup(token, bob, 10 ether);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + lockup.LOCKUP_PERIOD() + 1);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
         lockup.claim(ids);
     }
 }
