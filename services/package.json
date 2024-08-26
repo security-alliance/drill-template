@@ -11,6 +11,7 @@
   "scripts": {
     "dev:mon": "tsx watch ./src/mon/service.ts",
     "dev:bot": "tsx watch ./src/bot/service.ts",
+    "dev:exploiter": "tsx watch ./src/bot/exploiter.ts",
     "start:mon": "tsx ./src/mon/service.ts",
     "start:bot": "tsx ./src/bot/service.ts",
     "build": "tsc -p ./tsconfig.json",
