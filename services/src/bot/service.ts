@@ -12,8 +12,8 @@ import { BigNumber, Signer, Wallet, ethers, utils } from 'ethers'
 
 import { version } from '../../package.json'
 
-import { MockTokenAbi } from './MockTokenAbi'
-import { LockupAbi } from './LockupAbi'
+import { MockTokenAbi } from '../../lib/abi/MockTokenAbi'
+import { LockupAbi } from '../../lib/abi/LockupAbi'
 
 type Options = {
   rpcProvider: Provider

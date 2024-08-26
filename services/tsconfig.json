@@ -21,7 +21,7 @@
   "include": [
     "package.json",
     "src/**/*"
-  ],
+, "lib/abi/LockupAbi.ts", "lib/abi/MockTokenAbi.ts"  ],
   "exclude": [
     "node_modules",
     "dist"
