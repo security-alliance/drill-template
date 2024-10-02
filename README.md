@@ -1,13 +1,14 @@
-# Drill Scenario Template
+# SEAL Drill Template
 
-This repository contains the tools that the SEAL Chaos Team uses to coordinate drills with protocol teams. They include:
+This repository contains the templates and relevant tooling used by the SEAL Chaos Team to coordinate drills with protocol teams.
 
-* A Foundry & Hardhat setup for developing & testing scenarios on a local fork
-* A [Silverback](https://github.com/ApeWorX/silverback) python application for orchestrating the drill & monitoring
-* Configurations for running a live fork on Tenderly
-* A template for a tabletop exercise
-* A template typescript bot service (inspired by Optimism)
-* A template monitoring bot service with connections to Prometheus, Grafana, and OpsGenie (inspired by Optimism)
+## Getting Started
+
+The general framework for planning and executing a drill is outlined in this README below. Supporting text templates can be found in the <a href="./templates">`templates/`</a> directory
+
+For a complete demonstration of a drill on an example protocol, visit the <a href="./e2e-example">`e2e-example/`</a> directory. The contents of this directory can also be modified and adapted for conducting your own drills.
+
+For general tools, refer to the <a href="./tools">`tools/`</a> directory.
 
 ## Planning a Drill
 
@@ -47,42 +48,6 @@ Once a scenario has been selected, it can be tested using the Foundry & Hardhat 
 
 While it is possible to override contract states and code on fork networks, it is best to keep the scenario as realistic as possible by simulating actions that could realistically be taken by addresses with the appropriate permissions. This helps to validate the protocol's configuration, and to ensure that the protocol team is able to respond to the scenario.
 
-### Phase 4 - Postmortem
+### Phase 4 - Retrospective
 
-After the drill, it is important to perform a postmortem with the protocol team. This should include a discussion of what went well, what could have gone better, and any changes that should be made to the protocol's configuration or response process. It is also a good time to discuss any additional training or resources that the protocol team may need.
-
-## Tools
-
-### Foundry & Hardhat
-
-The test folder contains some utilities for interacting with common protocols. These can be used to test scenarios locally using a fork network. When working with a protocol it is important to write tests to validate the assumptions around the protocol's configuration. Often in writing these tests you will discover potential things to simulate in the drill.
-
-The folder also includes a client for fetching data from TheGraph. This is useful to get network conditions at the time of the fork to simulate behavoir of real addresses.
-
-### Silverback
-
-[Silverback](https://github.com/ApeWorX/silverback) is a framework to orchestrate bots & monitoring. This repository contains some example apps of how to set up:
-
-* Telegram bots to monitor the drill
-* Impersonation bots to simulate actions by real addresses
-* Configuration with local & remote forks
-* Utilities for interacting with various common protocols like Uniswap
-
-### Live Fork & Explorer
-
-There are two recommended ways to run the live exercise. You can either set up a fork network on Tenderly using Testnets which comes with an included explorer, or can host a Blockscout explorer connected to a remote anvil node.
-
-### Bot Services
-
-There is an example bot service in the bots folder. This is a typescript bot that can be used to simulate actions by real addresses. It is inspired by the Optimism services from their [Chain-Mon package](https://github.com/ethereum-optimism/optimism/tree/develop/packages/chain-mon). It can be used to simulate actions like deposits, withdrawals, and trades.
-
-### Monitoring & Alerting Services
-
-There is an example monitoring service in the monitoring folder. This is a typescript bot that can be used to monitor the state of the protocol and send alerts to Prometheus, Grafana, and OpsGenie. It is inspired by the Optimism services from their [Chain-Mon package](https://github.com/ethereum-optimism/optimism/tree/develop/packages/chain-mon). It can be used to monitor things like the state of the protocol, the state of the network, and the state of the explorer.
-
-
-## Other Exercises
-
-In addition to the tabletop and live scenarios, there are other exercises that can be performed to test the protocol's response process. These include:
-- Screening governance proposals for malicious intent
-- Performing an emergency protocol upgrade
+After the drill, it is important to perform a retrospective with the protocol team. This should include a discussion of what went well, what could have gone better, and any changes that should be made to the protocol's configuration or response process. It is also a good time to discuss any additional training or resources that the protocol team may need.
