@@ -4,11 +4,11 @@ This repository contains the templates and relevant tooling used by the SEAL Cha
 
 ## Getting Started
 
-The general framework for planning and executing a drill is outlined in this README below. Supporting text templates can be found in the <a href="./templates">`templates/`</a> directory
+The general framework for planning and executing a drill is outlined in this README below. Supporting text templates can be found in the [`templates/`](./templates) directory
 
-For a complete demonstration of a drill on an example protocol, visit the <a href="./e2e-example">`e2e-example/`</a> directory. The contents of this directory can also be modified and adapted for conducting your own drills.
+For a complete demonstration of a drill on an example protocol, visit the [`e2e-example/`](./e2e-example) directory. The contents of this directory can also be modified and adapted for conducting your own drills.
 
-For general tools, refer to the <a href="./tools">`tools/`</a> directory.
+For general tools, refer to the [`tools/`](./tools) directory.
 
 ## Planning a Drill
 
@@ -38,7 +38,7 @@ The tabletop exercise should include a few different scenarios to help understan
 
 It can also help to ask the team if there are any particular areas of the protocol that they are concerned about, or that they would like to test.
 
-A sample tabletop script is available in [tabletop/template.md](tabletop/template.md).
+A sample tabletop script is available in [`templates/tabletop.md`](templates/tabletop.md).
 
 ### Phase 3 - Live Drill Planning
 
@@ -51,3 +51,5 @@ While it is possible to override contract states and code on fork networks, it i
 ### Phase 4 - Retrospective
 
 After the drill, it is important to perform a retrospective with the protocol team. This should include a discussion of what went well, what could have gone better, and any changes that should be made to the protocol's configuration or response process. It is also a good time to discuss any additional training or resources that the protocol team may need.
+
+A sample retrospective script is available in [`templates/retrospective.md`](templates/retrospective.md).
