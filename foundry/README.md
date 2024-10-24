@@ -1,7 +1,5 @@
 ## Example Protocol for SEAL Attack Simulation Template
 
-Work in progress. Here is a relevant comment from the `Lockup.sol` contract:
-
 
 ```solidity
 /*
@@ -32,16 +30,14 @@ Work in progress. Here is a relevant comment from the `Lockup.sol` contract:
 */
 ```
 
-## Current progress
+## Contents
 
 - Lockup contract implemented in `src/Lockup.sol`
-- The bug has been quickly tested to exist in `script/LockupExploit.s.sol`
-- An example incident response (pausing then upgrading) has been quickly tested in `script/LockupIncidentResponse.s.sol`
-- Some really basic tests have been added in `Lockup.t.sol`
+- The bug has been tested in `test/LockupExploit.t.sol`
+- An example incident response (pausing then upgrading) has been tested in `test/LockupIncidentResponse.t.sol`
+- Protocol functionality has been tested in `test/Lockup.t.sol`
+- Deployment script in `script/DeployLockup.s.sol`
+- Mock token deployment script in `script/DeployMockTokens.s.sol`
+- Upgrade script in `script/LockupUpgrade.s.sol`
+- Pause script in `script/LockupPause.s.sol`
 
-
-## Todo
-
-- Document the code more and explain how the contracts/scripts tie into the template
-- The scripts are very rough and need polishing. They're really more like tests right now, but will adapt them into actual scripts that can be run in the attack sim template repo. Getting these scripts to run with `pnpm` instead of `forge` will probably match the template repo too.
-- Add monitoring + bots using the template repo. Will discuss with Isaac on next steps for this
