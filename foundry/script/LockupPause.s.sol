@@ -7,30 +7,35 @@ import {MockToken} from "../src/fixtures/MockToken.sol";
 import { CallbackToken } from "../src/fixtures/CallbackToken.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-contract LockupDeployer is Script {
+contract LockupPause is Script {
 
     Lockup deployedLockup;
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        
+        address lockupProxyAddress = 0xCC9676b9bf25cE45a3a5F88205239aFdDeCF1BC7;
+        
+        Lockup lockup = Lockup(lockupProxyAddress);
+        
+        address lockupOwner = lockup.owner();
+        
+        if (lockupOwner != deployer) {
+            console.log("Lockup owner is not the deployer");
+            return;
+        }
+        
+        if (lockup.paused()) {
+            console.log("Lockup is already paused");
+            return;
+        }
 
         vm.startBroadcast(deployerPrivateKey);
         
-        MockToken mockToken = new MockToken("MockToken", "MTK", deployer);
-        CallbackToken callbackToken = new CallbackToken("CallbackToken", "CBT", deployer);
-
-        address implementation = address(new Lockup());
-        address proxy = address(
-            new ERC1967Proxy(
-                implementation,
-                abi.encodeWithSignature("initialize()")
-            )
-        );
+        lockup.pause();
         
-        // TODO transfer ownership of lockup to a safe
         vm.stopBroadcast();
 
-        deployedLockup = Lockup(proxy);
     }
 }

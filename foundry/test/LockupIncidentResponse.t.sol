@@ -8,8 +8,9 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {LockupExploit} from "../src/LockupExploiter.sol";
 import {CallbackToken} from "../src/fixtures/CallbackToken.sol";
+import {LockupV2} from "../src/LockupV2.sol";
 
-contract LockupExploitTest is Test {
+contract LockupIncidentResponseTest is Test {
     Lockup lockup;
     IERC20 token;
     CallbackToken callbackToken;
@@ -18,6 +19,7 @@ contract LockupExploitTest is Test {
     address alice;
     address bob;
     address exploiterOwner;
+    address lockupOwner;
 
     function setUp() public {
         // Deploy the implementation contract
@@ -43,9 +45,15 @@ contract LockupExploitTest is Test {
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         exploiterOwner = makeAddr("exploiterOwner");
+        lockupOwner = lockup.owner();
     }
 
-    function test_exploit_succeeds() public {
+
+    function test_exploit_fails_after_upgrade() public {
+        vm.startPrank(lockupOwner);
+        lockup.upgradeToAndCall(address(new LockupV2()), "");
+        vm.stopPrank();
+
         // Setup
         exploiter = new LockupExploit(exploiterOwner);
 
@@ -87,28 +95,24 @@ contract LockupExploitTest is Test {
             address(exploiter)
         );
 
-        // Assert that the exploit was successful
+        // Assert that the exploit was unsuccessful
         assertEq(
             lockupBalanceAfter,
-            0,
-            "Lockup should have 0 balance after exploit"
+            lockupAmount,
+            "Lockup should have balance after attempted exploit"
         );
         assertEq(
             exploiterBalanceAfter,
-            lockupAmount * 2,
-            "Exploiter should have double the initial lockup amount"
+            lockupAmount,
+            "Exploiter should have balance after attempted exploit"
         );
 
-        // Try to claim as Alice (should fail as tokens were stolen)
+        // Try to claim as Alice (should succeed as exploit fails)
         uint256[] memory ids = new uint256[](1);
         ids[0] = aliceLockupId;
         vm.prank(alice);
-        vm.expectRevert();
         lockup.claim(ids);
         
-        // Withdraw ERC20 from exploiter
-        vm.prank(exploiterOwner);
-        exploiter.withdrawErc20(address(callbackToken), lockupAmount *2);
 
     }
 }
