@@ -299,7 +299,7 @@ It can be helpful to prepare an expected order of events for the organizer and t
 
 In the image below we can see an invariant violation was discovered meaning the contract was exploited.
 
-TODO image
+![Invariant Violation](assets/GrafanaInvariant.png)
 
 **9:20 AM** - Warroom is created
 
