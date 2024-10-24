@@ -13,6 +13,7 @@ import { BigNumber, ethers } from 'ethers'
 import { version } from '../../package.json'
 
 import { LockupAbi } from '../../lib/abi/LockupAbi'
+import { MockTokenAbi } from '../../lib/abi/MockTokenAbi'
 
 type Options = {
   rpcProvider: Provider
@@ -29,6 +30,7 @@ type Metrics = {
   totalLockedAmount: Gauge
   totalClaimedAmount: Gauge
   invariantViolations: Gauge
+  lockupContractBalance: Gauge
 }
 
 type LockupEvent = {
@@ -117,18 +119,23 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
         },
         totalLockedAmount: {
           type: Gauge,
-          desc: 'Total locked amount per token per recipient',
-          labels: ['token', 'recipient'],
+          desc: 'Total locked amount per token',
+          labels: ['token'],
         },
         totalClaimedAmount: {
           type: Gauge,
-          desc: 'Total claimed amount per token per recipient',
-          labels: ['token', 'recipient'],
+          desc: 'Total claimed amount per token',
+          labels: ['token'],
         },
         invariantViolations: {
           type: Gauge,
           desc: 'Number of invariant violations (claimed > locked for token and recipient)',
           labels: ['token', 'recipient'],
+        },
+        lockupContractBalance: {
+          type: Gauge,
+          desc: 'Balance of the lockup contract',
+          labels: ['token'],
         },
       },
     })
@@ -149,7 +156,8 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
     this.state.lockupEvents = []
     this.state.claimEvents = []
     this.state.tokenBalances = new Map()
-    this.state.lastProcessedBlockNumber = this.options.lockupIndexingStartBlock - 1
+    this.state.lastProcessedBlockNumber =
+      this.options.lockupIndexingStartBlock - 1
     this.state.isInitialSyncComplete = false
 
     await this.indexPreviousEvents()
@@ -164,38 +172,55 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
   }
 
   private async indexPreviousEvents(): Promise<void> {
-    console.log(`Indexing previous events starting from block ${this.options.lockupIndexingStartBlock}...`)
+    console.log(
+      `Indexing previous events starting from block ${this.options.lockupIndexingStartBlock}...`
+    )
     const latestBlock = await this.options.rpcProvider.getBlock('latest')
 
     const lockupFilter = this.state.lockupProxy.filters.NewLockup()
-    const lockupEvents = await this.state.lockupProxy.queryFilter(lockupFilter, this.options.lockupIndexingStartBlock, latestBlock.number)
+    const lockupEvents = await this.state.lockupProxy.queryFilter(
+      lockupFilter,
+      this.options.lockupIndexingStartBlock,
+      latestBlock.number
+    )
 
     const claimFilter = this.state.lockupProxy.filters.LockupClaimed()
-    const claimEvents = await this.state.lockupProxy.queryFilter(claimFilter, this.options.lockupIndexingStartBlock, latestBlock.number)
+    const claimEvents = await this.state.lockupProxy.queryFilter(
+      claimFilter,
+      this.options.lockupIndexingStartBlock,
+      latestBlock.number
+    )
 
-    console.log(`Found ${lockupEvents.length} lockup events and ${claimEvents.length} claim events`)
+    console.log(
+      `Found ${lockupEvents.length} lockup events and ${claimEvents.length} claim events`
+    )
 
     this.processEvents(lockupEvents, claimEvents)
 
     this.state.lastProcessedBlockNumber = latestBlock.number
     this.state.isInitialSyncComplete = true
-    console.log(`Finished indexing previous events up to block ${latestBlock.number}`)
+    console.log(
+      `Finished indexing previous events up to block ${latestBlock.number}`
+    )
     // this.logAllBalances()
   }
 
-  private processEvents(lockupEvents: ethers.Event[], claimEvents: ethers.Event[]): void {
+  private processEvents(
+    lockupEvents: ethers.Event[],
+    claimEvents: ethers.Event[]
+  ): void {
     const allEvents = [...lockupEvents, ...claimEvents].sort((a, b) => {
       if (a.blockNumber !== b.blockNumber) {
-        return a.blockNumber - b.blockNumber;
+        return a.blockNumber - b.blockNumber
       }
-      return a.transactionIndex - b.transactionIndex;
-    });
+      return a.transactionIndex - b.transactionIndex
+    })
 
     for (const event of allEvents) {
       if (event.event === 'NewLockup') {
-        this.processLockupEvent(event);
+        this.processLockupEvent(event)
       } else if (event.event === 'LockupClaimed') {
-        this.processClaimEvent(event);
+        this.processClaimEvent(event)
       }
     }
   }
@@ -207,7 +232,7 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
       token: lockupInfo.token,
       recipient: lockupInfo.recipient,
       amount: lockupInfo.amount,
-      blockNumber: event.blockNumber
+      blockNumber: event.blockNumber,
     }
     this.state.lockupEvents.push(newLockup)
 
@@ -215,11 +240,15 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
       this.state.tokenBalances.set(newLockup.token, new Map())
     }
     const tokenBalances = this.state.tokenBalances.get(newLockup.token)!
-    const currentBalance = tokenBalances.get(newLockup.recipient) || { locked: BigNumber.from(0), claimed: BigNumber.from(0), lastUpdatedBlock: 0 }
+    const currentBalance = tokenBalances.get(newLockup.recipient) || {
+      locked: BigNumber.from(0),
+      claimed: BigNumber.from(0),
+      lastUpdatedBlock: 0,
+    }
     const newBalance = {
       locked: currentBalance.locked.add(newLockup.amount),
       claimed: currentBalance.claimed,
-      lastUpdatedBlock: newLockup.blockNumber
+      lastUpdatedBlock: newLockup.blockNumber,
     }
     tokenBalances.set(newLockup.recipient, newBalance)
 
@@ -241,7 +270,7 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
       token: claimInfo.token,
       recipient: claimInfo.recipient,
       amount: claimInfo.amount,
-      blockNumber: event.blockNumber
+      blockNumber: event.blockNumber,
     }
     this.state.claimEvents.push(newClaim)
 
@@ -249,54 +278,77 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
       this.state.tokenBalances.set(newClaim.token, new Map())
     }
     const tokenBalances = this.state.tokenBalances.get(newClaim.token)!
-    const currentBalance = tokenBalances.get(newClaim.recipient) || { locked: BigNumber.from(0), claimed: BigNumber.from(0), lastUpdatedBlock: 0 }
+    const currentBalance = tokenBalances.get(newClaim.recipient) || {
+      locked: BigNumber.from(0),
+      claimed: BigNumber.from(0),
+      lastUpdatedBlock: 0,
+    }
     const newBalance = {
       locked: currentBalance.locked, // Keep the locked amount as is
       claimed: currentBalance.claimed.add(newClaim.amount),
-      lastUpdatedBlock: event.blockNumber
+      lastUpdatedBlock: event.blockNumber,
     }
     tokenBalances.set(newClaim.recipient, newBalance)
+  }
 
-    // console.log(`Processed claim event:`)
-    // console.log(`  ID: ${newClaim.id}`)
-    // console.log(`  Token: ${newClaim.token}`)
-    // console.log(`  Recipient: ${newClaim.recipient}`)
-    // console.log(`  Amount: ${newClaim.amount.toString()}`)
-    // console.log(`  Block: ${newClaim.blockNumber}`)
-    // console.log(`  New Balance:`)
-    // console.log(`    Locked: ${newBalance.locked.toString()}`)
-    // console.log(`    Claimed: ${newBalance.claimed.toString()}`)
-}
+  private convertToDecimal(amount: BigNumber, decimals: number): number {
+    const amountString = ethers.utils.formatUnits(amount, decimals)
+    return parseFloat(amountString)
+  }
+  
+  private async updateLockupBalanceMetrics(tokenAddress: string): Promise<void> {
+    const mockToken = new ethers.Contract(
+      tokenAddress,
+      MockTokenAbi,
+      this.options.rpcProvider
+    )
+    const balance = await mockToken.balanceOf(this.options.lockupProxyAddress)
+    this.metrics.lockupContractBalance.set(
+      { token: tokenAddress },
+      this.convertToDecimal(balance, 18)
+    )
+  }
 
-  private updateMetrics(currentBlockNumber: number): void {
-    const lockupTokens = new Set(this.state.lockupEvents.map(e => e.token))
+  private async updateMetrics(currentBlockNumber: number): Promise<void> {
+    const lockupTokens = new Set(this.state.lockupEvents.map((e) => e.token))
     for (const token of lockupTokens) {
-      const count = this.state.lockupEvents.filter(e => e.token === token).length
+      const count = this.state.lockupEvents.filter(
+        (e) => e.token === token
+      ).length
       this.metrics.lockupEventsCount.set({ token }, count)
+
+      await this.updateLockupBalanceMetrics(token)
     }
 
-    const claimTokens = new Set(this.state.claimEvents.map(e => e.token))
+    const claimTokens = new Set(this.state.claimEvents.map((e) => e.token))
     for (const token of claimTokens) {
-      const count = this.state.claimEvents.filter(e => e.token === token).length
+      const count = this.state.claimEvents.filter(
+        (e) => e.token === token
+      ).length
       this.metrics.claimEventsCount.set({ token }, count)
+
+      await this.updateLockupBalanceMetrics(token)
     }
 
     for (const [token, balances] of this.state.tokenBalances) {
       for (const [recipient, balance] of balances) {
         this.metrics.totalLockedAmount.set(
-          { token, recipient },
-          parseInt(balance.locked.toString(), 10)
+          { token },
+          this.convertToDecimal(balance.locked, 18)
         )
-        
+
         this.metrics.totalClaimedAmount.set(
-          { token, recipient },
-          parseInt(balance.claimed.toString(), 10)
+          { token },
+          this.convertToDecimal(balance.claimed, 18)
         )
-        
-        if (this.state.isInitialSyncComplete && 
-            currentBlockNumber >= balance.lastUpdatedBlock + this.options.bufferBlockCount &&
-            balance.claimed.gt(balance.locked)) {
-          this.metrics.invariantViolations.inc({ token, recipient })
+
+        if (
+          this.state.isInitialSyncComplete &&
+          currentBlockNumber >=
+            balance.lastUpdatedBlock + this.options.bufferBlockCount &&
+          balance.claimed.gt(balance.locked)
+        ) {
+          this.metrics.invariantViolations.set({ token, recipient }, 1)
           console.warn(`Invariant violation detected:`)
           console.warn(`  Token: ${token}`)
           console.warn(`  Recipient: ${recipient}`)
@@ -304,13 +356,15 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
           console.warn(`  Claimed: ${balance.claimed.toString()}`)
           console.warn(`  Last Updated Block: ${balance.lastUpdatedBlock}`)
           console.warn(`  Current Block: ${currentBlockNumber}`)
+        } else {
+          this.metrics.invariantViolations.set({ token, recipient }, 0)
         }
       }
     }
   }
 
   private logAllBalances(): void {
-    console.log("Current state of all balances:")
+    console.log('Current state of all balances:')
     for (const [token, balances] of this.state.tokenBalances) {
       for (const [recipient, balance] of balances) {
         console.log(`Token: ${token}, Recipient: ${recipient}`)
@@ -323,30 +377,45 @@ export class LockupMonitor extends BaseServiceV2<Options, Metrics, State> {
 
   async main(): Promise<void> {
     const latestBlock = await this.options.rpcProvider.getBlock('latest')
-    
-    const fromBlock = Math.min(this.state.lastProcessedBlockNumber + 1, latestBlock.number)
-    
+
+    const fromBlock = Math.min(
+      this.state.lastProcessedBlockNumber + 1,
+      latestBlock.number
+    )
+
     if (fromBlock > latestBlock.number) {
-      console.log(`No new blocks to process. Current: ${this.state.lastProcessedBlockNumber}, Latest: ${latestBlock.number}`)
-      this.updateMetrics(latestBlock.number)
+      console.log(
+        `No new blocks to process. Current: ${this.state.lastProcessedBlockNumber}, Latest: ${latestBlock.number}`
+      )
+      await this.updateMetrics(latestBlock.number)
       return sleep(this.options.sleepTimeMs)
     }
 
     console.log(`Processing blocks from ${fromBlock} to ${latestBlock.number}`)
 
     const lockupFilter = this.state.lockupProxy.filters.NewLockup()
-    const newLockupEvents = await this.state.lockupProxy.queryFilter(lockupFilter, fromBlock, latestBlock.number)
+    const newLockupEvents = await this.state.lockupProxy.queryFilter(
+      lockupFilter,
+      fromBlock,
+      latestBlock.number
+    )
 
     const claimFilter = this.state.lockupProxy.filters.LockupClaimed()
-    const newClaimEvents = await this.state.lockupProxy.queryFilter(claimFilter, fromBlock, latestBlock.number)
+    const newClaimEvents = await this.state.lockupProxy.queryFilter(
+      claimFilter,
+      fromBlock,
+      latestBlock.number
+    )
 
     this.processEvents(newLockupEvents, newClaimEvents)
 
     this.state.lastProcessedBlockNumber = latestBlock.number
 
-    this.updateMetrics(latestBlock.number)
+    await this.updateMetrics(latestBlock.number)
 
-    console.log(`Processed ${newLockupEvents.length} new lockup events and ${newClaimEvents.length} new claim events up to block ${latestBlock.number}`)
+    console.log(
+      `Processed ${newLockupEvents.length} new lockup events and ${newClaimEvents.length} new claim events up to block ${latestBlock.number}`
+    )
     // this.logAllBalances()
 
     return sleep(this.options.sleepTimeMs)

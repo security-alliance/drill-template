@@ -34,10 +34,10 @@ services:
     build:
       context: ../
       target: mon
-      dockerfile: services/docker/Dockerfile.packages
+      dockerfile: services/Dockerfile.packages
     # platform: linux/amd64
     restart: always
-    container_name: 'balance-mon'
+    container_name: 'lockup-mon'
     ports:
       - 7300:7300
     env_file:

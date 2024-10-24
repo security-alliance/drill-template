@@ -13,24 +13,15 @@
 # Docker build cache hit rate. `alpine` is chosen as the base image for the
 # first stage because it's the smallest image that have access to the `cp
 # --parents -t` command (by installing the `coreutils` package).
-FROM alpine:3.16 as manifests
-RUN apk add coreutils
+# FROM alpine:3.16 as manifests
+# RUN apk add coreutils
 
-WORKDIR /tmp
-COPY pnpm-lock.yaml pnpm-workspace.yaml .nvmrc package.json ./src/
-COPY packages src/packages/
-RUN mkdir manifests && \
-  cd src && \
-  # copy package.json recursively
-  find . -name 'package.json' | xargs cp --parents -t ../manifests/ && \
-  # pnpm-lock.yaml
-  cp pnpm-lock.yaml ../manifests/ && \
-  # pnpm-workspace.yaml
-  cp pnpm-workspace.yaml ../manifests/ && \
-  # .nvmrc
-  cp .nvmrc ../manifests/
+# WORKDIR /tmp
+# COPY pnpm-lock.yaml package.json ./
+# COPY ./ ./
+# COPY packages src/packages/
 
-FROM us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:latest as foundry
+# FROM us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:latest as foundry
 # bullseye-slim is debian based
 # we use it rather than alpine because it's not much
 # bigger and alpine is often missing packages for node applications
@@ -59,37 +50,33 @@ RUN apt-get update && apt-get install -y \
 
 RUN npm install pnpm --global
 
-COPY --from=foundry /usr/local/bin/forge /usr/local/bin/forge
-COPY --from=foundry /usr/local/bin/cast /usr/local/bin/cast
 
-WORKDIR /opt/seal
+ARG CACHEBUST=3
+WORKDIR /opt/seal/services
 
-# Copy manifest files into the image in
-# preparation for `pnpm install`.
-COPY --from=manifests /tmp/manifests  ./
-COPY *.json ./
 
-RUN pnpm install
+# Copy services folder
+COPY ./services ./
 
-COPY ./packages ./packages
 
-COPY .git/ ./.git
-COPY .gitmodules ./.gitmodules
-RUN git submodule update --init --recursive
+WORKDIR /opt/seal/services
 
-RUN pnpm build
+RUN CI=1 pnpm install --verbose --no-frozen-lockfile
+
+
+# CMD ["tail", "-f", "/dev/null"]
 
 ENTRYPOINT ["pnpm", "run"]
 
-FROM base as services
-WORKDIR /opt/seal
 
 FROM base as mon
-WORKDIR /opt/seal
+WORKDIR /opt/seal/services
 CMD ["start:mon"]
+# CMD ["tail", "-f", "/dev/null"]
 
 
 FROM base as bot
-WORKDIR /opt/seal
+WORKDIR /opt/seal/services
 CMD ["start:bot"]
+
 
