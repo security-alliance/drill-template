@@ -172,7 +172,7 @@ In this case we selected the following options:
 * Enable public block explorer
 * Disable state sync (state sync is useful if your drill relies on updating values like oracles which can go stale)
 
-![Fork UI](assets/NewForkUI.png)
+![Fork UI](assets/NewForkUi.png)
 
 On the fork UI you will find the explorer, faucet, admin RPC and public RPC. The admin RPC can be used to spoof sender addresses and use other cheatcodes that are not available on the public RPC.
 
