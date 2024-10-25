@@ -10,6 +10,8 @@ This repository contains the tools that the SEAL Wargames Team uses to coordinat
 * A template typescript bot service (inspired by Optimism)
 * A template monitoring bot service with connections to Prometheus, Grafana, and OpsGenie (inspired by Optimism)
 
+[Video Overview of this Repository](https://www.loom.com/share/73ef3e5b9bac446697274441e2c38ccf?sid=ee090249-7593-4630-996e-8b9db32f29d3)
+
 - [Security Alliance Wargames Drill Scenario Template](#security-alliance-wargames-drill-scenario-template)
   - [Planning a Drill](#planning-a-drill)
     - [Phase 1 - Recon](#phase-1---recon)
