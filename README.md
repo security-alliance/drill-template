@@ -343,3 +343,4 @@ After this we should see no new invariant violations on the dashboard. And once 
 This template contains all of the core components needed to run a wargame exercise. However, it is possible that the protocol team may have specific infrastructure that needs to be set up on the fork, and the scenario may need to be adapted to fit the protocol's specific attack surface.
 
 It is recommended to fork this repository, first validate the scenario in foundry, then adapt the bots & monitoring services to fit the protocol's specific needs.
+# drill-template-multichain
